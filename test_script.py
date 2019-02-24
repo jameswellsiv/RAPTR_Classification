@@ -13,9 +13,9 @@ def test_script(img_filename):
     #---------------- Read the recieved image -----------------------------------------------------------
     received_image = image_utils.read_image(img_filename, 1) #Read in image to numpy array
     timestamp = image_utils.get_timestamp() #Get timestamp for appending to the processed images for the image that was recieved at this time (recieved_image)
-    print(timestamp)
+    #print(timestamp)
     new_filename = image_utils.append_timestamp('RecievedImage.jpg', timestamp) #Append the timestamp to the image file that is about to be saved
-    print(new_filename)
+    #print(new_filename)
     save_check1 = image_utils.save_image(received_image, 'C:\\Users\\james\\Anaconda3\\envs\\classifier_env\\Classifier_Project\\RAPTR_Classification\\Recieved_Images\\' + new_filename) #Save the received image with its timestamp appended
    
     if save_check1 is True:
@@ -63,9 +63,9 @@ def test_script(img_filename):
     #---------------- Classify the shape in the image --------------------------------------------------------------------
     if(template_color != "none"):
         object_classification = classify_shape('C:\\Users\\james\\Anaconda3\\envs\\classifier_env\\Classifier_Project\\RAPTR_Classification\\Resized_Images\\' + new_filename2, template_color) #Found the most dominant color in image, now pass through the resized image of the image used in the Dominant Color Determination, NOT the cropped image
-        print(object_classification)
+        #print(object_classification)
         #image_utils.toc()
-        print()
+        #print()
         return object_classification, 'C:\\Users\\james\\Anaconda3\\envs\\classifier_env\\Classifier_Project\\RAPTR_Classification\\Resized_Images\\' + new_filename2 #Return the classification and the resized image for displaying on the GUI
     else:
         print("Couldn't detect color")
