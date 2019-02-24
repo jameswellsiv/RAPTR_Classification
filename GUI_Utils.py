@@ -8,80 +8,108 @@ import os
 import cv2
 import time
 
-class subwindow(QtWidgets.QWidget):
-    def createWindow(self,WindowWidth,WindowHeight, parent=None):
-       super(subwindow,self).__init__(parent)
-       self.setWindowFlags(QtCore.Qt.WindowStaysOnTopHint)
-       self.resize(WindowWidth,WindowHeight)
+#------------------------------------------------------- Thread Used for Updating GUI and Watchdog for Trigger Folder --------------------------------------- 
+class WatchdogWorker(QtCore.QThread):
+    
+    output = QtCore.pyqtSignal(str, str)     #Signal for calling AddImage function
+    finished = QtCore.pyqtSignal()      #Signal for updating GUI    
+    terminated = QtCore.pyqtSignal()    #Another signal for updating GUI if user terminates
+    cancel = QtCore.pyqtSignal()        #Another signal for updating GUI if user terminates
 
-class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self):
-        super(MainWindow, self).__init__()
+    def __init__(self, parent = None):
+        QtCore.QThread.__init__(self, parent)
+        self.exiting = False           #Needed for loop in watchdog
+        self.old_size = -1             #Needed for loop in watchdog
+        self.new_size = 0              #Needed for loop in watchdog
+        self.state = True              #Needed for loop in watchdog
+        self.classification = 'none'
+        self.img_filename = 'none'
 
-        self.main_layout = QtGui.QVBoxLayout()
+    def __del__(self):
+        self.exiting = True
+        self.wait()
 
-        ok_button = QtGui.QPushButton("Run")
-        ok_button.clicked.connect(self.OK)      
-        self.main_layout.addWidget(ok_button)       
+    def render(self, old_size, new_size):
+        self.old_size = old_size
+        self.new_size = new_size
+        self.state = True
+        self.exiting = False
+        self.start()
 
-        cancel_button = QtGui.QPushButton("Cancel")
-        cancel_button.clicked.connect(self.cancel)      
-        self.main_layout.addWidget(cancel_button)
-
-        central_widget = QtGui.QWidget()
-        central_widget.setLayout(self.main_layout)
-        self.setCentralWidget(central_widget)
-
-    def myEvenListener(self,stop_event):
-        state=True
-        old_size = -1
-        classification = 'none'
-        while state and not stop_event.isSet():
-            new_size = get_dir_size()
-            print(new_size)
-            if(old_size == -1):
-                old_size = new_size
-            elif(new_size != old_size):
-                print('triggered!')
-                old_size = new_size
+    def run(self):
+        while not self.exiting and self.state:
+            self.new_size = get_dir_size()
+            #print(self.new_size)
+            if(self.old_size == -1):
+                self.old_size = self.new_size
+            elif(self.new_size > self.old_size):
+                #print('triggered!')
+                self.old_size = self.new_size
                 list_of_files = glob.glob('C:\\Users\\james\\Anaconda3\\envs\\classifier_env\\Classifier_Project\\RAPTR_Classification\\Trigger_Folder\\*.jpg') # * means all if need specific format then *.jpg
                 lastest_image = get_youngest_file(list_of_files) 
                 head, tail = os.path.split(lastest_image)
-                print(tail)
-                print('youngest: C:\\Users\\james\\Anaconda3\\envs\\classifier_env\\Classifier_Project\\RAPTR_Classification\\Trigger_Folder\\' + tail)
+                #print(tail)
+                #print('youngest: C:\\Users\\james\\Anaconda3\\envs\\classifier_env\\Classifier_Project\\RAPTR_Classification\\Trigger_Folder\\' + tail)
                 classification, img_filename = test_script('C:\\Users\\james\\Anaconda3\\envs\\classifier_env\\Classifier_Project\\RAPTR_Classification\\Trigger_Folder\\' + tail)
-                self.createsASubwindow(img_filename) 
+                #print("classified: " + img_filename)
+                #time.sleep(3)
+                self.output.emit(
+                      img_filename, classification)
 
-    def createsASubwindow(self, img_filename):
-        self.mySubwindow=subwindow()
-        self.mySubwindow.createWindow(500,400, parent=self)
-        #make pyqt items here for your subwindow
-        #for example self.mySubwindow.button=QtGui.QPushButton(self.mySubwindow)
-        print(img_filename)
-        label = QtWidgets.QLabel()
+class MainWindow(QtWidgets.QWidget):
+    def __init__(self):
+        QtWidgets.QWidget.__init__(self, parent=None)
+
+        self.thread = WatchdogWorker()
+
+        self.ok_button = QtGui.QPushButton("Run")
+        self.ok_button.clicked.connect(self.makePicture)      
+     
+
+        self.cancel_button = QtGui.QPushButton("Pause")
+        self.cancel_button.clicked.connect(self.cancel)      
+
+        
+        self.viewer = QtWidgets.QLabel()
+        self.viewer.setFixedSize(300, 300)
+
+        self.classificationBox = QtWidgets.QLabel()
+        self.classificationLabel = QtWidgets.QLabel("Classification: ")
+
+        self.thread.output.connect(self.addImage)
+        self.thread.finished.connect(self.updateUi)
+        self.thread.terminated.connect(self.updateUi)
+
+        layout = QtWidgets.QGridLayout()
+        layout.addWidget(self.ok_button, 0, 0)
+        layout.addWidget(self.cancel_button, 0, 1)
+        layout.addWidget(self.viewer, 1, 0, 1, 3)
+        layout.addWidget(self.classificationBox, 2, 1, 1, 3)
+        layout.addWidget(self.classificationLabel, 2, 0, 1, 3)
+        self.setLayout(layout)
+        
+        self.setWindowTitle(self.tr("RAPTR"))
+        
+    def makePicture(self):
+        self.ok_button.setEnabled(False)
+        pixmap = QtGui.QPixmap(self.viewer.size())
+        pixmap.fill(QtCore.Qt.black)
+        self.viewer.setPixmap(pixmap)
+        self.thread.render(-1, 0)
+
+    def addImage(self, img_filename, classification):
+        pixmap = self.viewer.pixmap()
         pixmap = QtGui.QPixmap(img_filename)
-        label.setPixmap(pixmap)
-        label.show()
-        time.sleep(60)
+        self.viewer.setPixmap(pixmap)
+        self.classificationBox.setText(classification)
 
-    def OK(self):
-        self.stop_event=threading.Event()
-        self.c_thread=threading.Thread(target=self.myEvenListener, args=(self.stop_event,))
-        self.c_thread.start()       
-
+    def updateUi(self):
+        print('updated!')
+        
+    
     def cancel(self):
-        print('cancelled!')
-        self.stop_event.set()
-        self.close() 
-
-    def open_popup(self):
-        print("Opening a new popup window...")
-        w1 = QtWidgets.QLabel("Window 1")
-        w1.show()
-        c2.waitKey(0)
-        #self.w.append(MyPopup())
-        #self.w.setGeometry(QRect(100, 100, 400, 200))
-        #self.w.show()   
+        self.ok_button.setEnabled(True)
+        self.thread.__del__()
 
 def main():
     app = QtGui.QApplication(sys.argv)
@@ -131,3 +159,4 @@ def get_oldest_file(files, _invert=False):
 def get_youngest_file(files):
     return get_oldest_file(files, _invert=True)
 
+#def watchdog_call():
